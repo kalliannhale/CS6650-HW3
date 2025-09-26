@@ -1,0 +1,27 @@
+# docker-compose.yml - The Refined Summoning Scroll
+
+services:
+  # The Necromancer Queen's Throne
+  master:
+    image: locustio/locust
+    ports:
+      - "8089:8089"
+    volumes:
+      - ./:/mnt/locust
+    #
+    # ❗❗❗ THE PORTAL TO THE MORTAL REALM ❗❗❗
+    # The command has been changed to target YOUR machine.
+    # "host.docker.internal" is the magic name for your computer from inside a container.
+    # Replace "8080" with the port your HW2 server is actually running on!
+    #
+    command: -f /mnt/locust/locustfile.py --master -H http://host.docker.internal:8080
+
+  # The Mindless Minion Hives
+  worker:
+    image: locustio/locust
+    volumes:
+      - ./:/mnt/locust
+    command: -f /mnt/locust/locustfile.py --worker --master-host master
+    deploy:
+      # THE DECREE: We now summon only ONE loyal minion.
+      replicas: 4

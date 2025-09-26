@@ -2,160 +2,203 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
-// SafeMap wraps a map with a mutex for thread-safe access
+// Regular Mutex Map
 type SafeMap struct {
 	mu sync.Mutex
 	m  map[int]int
 }
 
-// NewSafeMap creates a new thread-safe map
-func NewSafeMap() *SafeMap {
-	return &SafeMap{
-		m: make(map[int]int),
-	}
-}
-
-// Set safely writes a key-value pair to the map
-func (sm *SafeMap) Set(key, value int) {
-	sm.mu.Lock()
-	sm.m[key] = value
-	sm.mu.Unlock()
-}
-
-// Len safely returns the length of the map
-func (sm *SafeMap) Len() int {
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-	return len(sm.m)
+// RWMutex Map
+type RWMap struct {
+	mu sync.RWMutex
+	m  map[int]int
 }
 
 func main() {
-	fmt.Println("=== Mutex-Protected Map Experiment ===\n")
+	fmt.Println("🔮 THE GREAT MUTEX BATTLE: A Trilogy 🔮")
+	fmt.Println(strings.Repeat("=", 50))
 
-	// Run the safe version 3 times
-	var totalTime time.Duration
-	for run := 1; run <= 3; run++ {
-		duration := runSafeExperiment(run)
-		totalTime += duration
-		time.Sleep(100 * time.Millisecond)
+	// Run each test 3 times and average
+	regularTimes := make([]time.Duration, 3)
+	rwTimes := make([]time.Duration, 3)
+	syncMapTimes := make([]time.Duration, 3)
+
+	for i := 0; i < 3; i++ {
+		fmt.Printf("\n🌙 RITUAL #%d 🌙\n", i+1)
+
+		// Test 1: Regular Mutex
+		fmt.Println("\n1. REGULAR MUTEX (the overprotective parent):")
+		regularMap := &SafeMap{m: make(map[int]int)}
+		regularTimes[i] = testRegularMutex(regularMap)
+
+		// Test 2: RWMutex
+		fmt.Println("\n2. RWMUTEX (the smart bouncer):")
+		rwMap := &RWMap{m: make(map[int]int)}
+		rwTimes[i] = testRWMutex(rwMap)
+
+		// Test 3: sync.Map
+		fmt.Println("\n3. SYNC.MAP (the chaos witch):")
+		syncMapTimes[i] = testSyncMap()
 	}
 
-	fmt.Printf("\nMean time: %.2fms\n", float64(totalTime.Milliseconds())/3.0)
+	// Calculate and display averages
+	fmt.Println("\n" + strings.Repeat("🕯️", 25))
+	fmt.Println("\n✨ FINAL BATTLE RESULTS ✨")
+	fmt.Printf("\n🔒 Regular Mutex Average: %v", average(regularTimes))
+	fmt.Printf("\n📖 RWMutex Average: %v", average(rwTimes))
+	fmt.Printf("\n🌀 sync.Map Average: %v", average(syncMapTimes))
 
-	// Compare with single-threaded version
-	fmt.Println("\n=== Single-Threaded Comparison ===")
-	runSingleThreaded()
-
-	// Bonus: Show what happens without mutex (commented out to avoid crash)
-	// fmt.Println("\n=== Unsafe Version (will crash) ===")
-	// runUnsafeExperiment()
+	displayTradeoffs()
 }
 
-func runSafeExperiment(runNumber int) time.Duration {
-	sm := NewSafeMap()
+func testRegularMutex(safeMap *SafeMap) time.Duration {
 	var wg sync.WaitGroup
+	startTime := time.Now()
 
-	start := time.Now()
-
-	// Spawn 50 goroutines
+	// 50 writers
 	for g := 0; g < 50; g++ {
-		wg.Add(1)
-		go func(goroutineID int) {
-			defer wg.Done()
-			// Each goroutine writes 1,000 entries
-			for i := 0; i < 1000; i++ {
-				sm.Set(goroutineID*1000+i, i)
-			}
-		}(g)
-	}
-
-	// Wait for all goroutines to finish
-	wg.Wait()
-	duration := time.Since(start)
-
-	fmt.Printf("Run %d: len(m) = %d, time: %.2fms\n",
-		runNumber, sm.Len(), float64(duration.Microseconds())/1000.0)
-
-	return duration
-}
-
-func runSingleThreaded() {
-	m := make(map[int]int)
-
-	start := time.Now()
-
-	// Single thread writes all 50,000 entries
-	for g := 0; g < 50; g++ {
-		for i := 0; i < 1000; i++ {
-			m[g*1000+i] = i
-		}
-	}
-
-	duration := time.Since(start)
-
-	fmt.Printf("Single-threaded: len(m) = %d, time: %.2fms\n",
-		len(m), float64(duration.Microseconds())/1000.0)
-}
-
-func runMixedWorkload() {
-	sm := NewSafeMapRW()
-	var wg sync.WaitGroup
-
-	// First, populate the map
-	for i := 0; i < 10000; i++ {
-		sm.Set(i, i)
-	}
-
-	start := time.Now()
-
-	// 10 writer goroutines
-	for w := 0; w < 10; w++ {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			for i := 0; i < 100; i++ {
-				sm.Set(id*1000+i, i)
-			}
-		}(w)
-	}
-
-	// 40 reader goroutines
-	for r := 0; r < 40; r++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
 			for i := 0; i < 1000; i++ {
-				_ = sm.Len() // Simulate read operations
-			}
-		}()
-	}
-
-	wg.Wait()
-	fmt.Printf("Mixed workload time: %.2fms\n",
-		float64(time.Since(start).Microseconds())/1000.0)
-}
-
-// Uncomment this to see the unsafe version crash
-/*
-func runUnsafeExperiment() {
-	m := make(map[int]int)
-	var wg sync.WaitGroup
-
-	for g := 0; g < 50; g++ {
-		wg.Add(1)
-		go func(goroutineID int) {
-			defer wg.Done()
-			for i := 0; i < 1000; i++ {
-				m[goroutineID*1000+i] = i
+				safeMap.mu.Lock()
+				safeMap.m[id*1000+i] = i
+				safeMap.mu.Unlock()
 			}
 		}(g)
 	}
 
 	wg.Wait()
-	fmt.Printf("len(m) = %d\n", len(m))
+	duration := time.Since(startTime)
+
+	safeMap.mu.Lock()
+	finalLen := len(safeMap.m)
+	safeMap.mu.Unlock()
+
+	fmt.Printf("📊 Map size: %d | ⏱️ Time: %v\n", finalLen, duration)
+	return duration
 }
-*/
+
+func testRWMutex(rwMap *RWMap) time.Duration {
+	var wg sync.WaitGroup
+	startTime := time.Now()
+
+	// 50 writers
+	for g := 0; g < 50; g++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for i := 0; i < 1000; i++ {
+				rwMap.mu.Lock()
+				rwMap.m[id*1000+i] = i
+				rwMap.mu.Unlock()
+			}
+		}(g)
+	}
+
+	wg.Wait()
+	duration := time.Since(startTime)
+
+	rwMap.mu.RLock()
+	finalLen := len(rwMap.m)
+	rwMap.mu.RUnlock()
+
+	fmt.Printf("📊 Map size: %d | ⏱️ Time: %v\n", finalLen, duration)
+	return duration
+}
+
+func testSyncMap() time.Duration {
+	var m sync.Map
+	var wg sync.WaitGroup
+	startTime := time.Now()
+
+	// 50 writers - like 50 witches casting spells simultaneously
+	for g := 0; g < 50; g++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for i := 0; i < 1000; i++ {
+				m.Store(id*1000+i, i) // Pre-protected chaos magic!
+			}
+		}(g)
+	}
+
+	wg.Wait()
+	duration := time.Since(startTime)
+
+	// Count entries using Range (the séance method)
+	var count int64
+	m.Range(func(key, value interface{}) bool {
+		atomic.AddInt64(&count, 1)
+		return true // Continue the séance
+	})
+
+	fmt.Printf("📊 Map size: %d | ⏱️ Time: %v\n", count, duration)
+	return duration
+}
+
+func average(times []time.Duration) time.Duration {
+	var total time.Duration
+	for _, t := range times {
+		total += t
+	}
+	return total / time.Duration(len(times))
+}
+
+func displayTradeoffs() {
+	fmt.Println("\n\n" + strings.Repeat("💀", 25))
+	fmt.Println("\n🩸 THE BLOOD PRICE OF EACH APPROACH 🩸")
+
+	fmt.Println(`
+╔════════════════════════════════════════════════════════════╗
+║                  ⚰️ MUTEX COMPARISON ⚰️                      ║
+╠════════════════════════════════════════════════════════════╣
+║ Regular Mutex (The Eve Brown Approach)                     ║
+║ 🎭 Speed: SLOWEST (everyone waits, even readers)          ║
+║ 🛡️ Safety: MAXIMUM (one at a time, period)                ║
+║ 💭 Memory: LOWEST (just one lock)                         ║
+║ 🎪 Best for: Simple cases, write-heavy loads              ║
+║ 👻 Horror Level: Overprotective parent in horror movie    ║
+╠════════════════════════════════════════════════════════════╣
+║ RWMutex (The Wu Zetian Strategy)                          ║
+║ 🎭 Speed: MEDIUM (readers can party together)             ║
+║ 🛡️ Safety: HIGH (smart separation)                        ║
+║ 💭 Memory: LOW (slightly more than regular)               ║
+║ 🎪 Best for: Read-heavy workloads                         ║
+║ 👻 Horror Level: Smart final girl who actually survives   ║
+╠════════════════════════════════════════════════════════════╣
+║ sync.Map (The Ethel Cain Chaos Magic)                     ║
+║ 🎭 Speed: FASTEST (lock-free witchcraft)                  ║
+║ 🛡️ Safety: BUILT-IN (but with limitations)                ║
+║ 💭 Memory: HIGHEST (duplicate storage, atomic magic)      ║
+║ 🎪 Best for: Mostly static keys, few writers              ║
+║ 👻 Horror Level: Possessed doll that somehow works        ║
+╚════════════════════════════════════════════════════════════╝
+
+🌙 READ-HEAVY SCENARIO PROPHECY 🌙
+If reads dominated (like streaming Chappell Roan vs recording):
+- Regular Mutex: Still slow (readers wait for each other) 
+- RWMutex: SHINES! (multiple readers vibe together)
+- sync.Map: Good but not as optimized for pure reading
+
+💀 THE CURSED TRUTH 💀
+sync.Map uses copy-on-write and atomic operations - like having
+two versions of reality (read-only and dirty) that occasionally
+sync up during a séance. It's optimized for:
+- Keys written once, read many times
+- Multiple goroutines reading disjoint key sets
+
+But it's TERRIBLE for:
+- Frequent updates to same keys
+- Need to iterate over all entries often
+- Memory-constrained environments
+
+🎪 Like Sexyy Red says: "You get what you pay for!" 🎪
+`)
+}
